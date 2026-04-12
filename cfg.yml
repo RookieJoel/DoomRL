@@ -12,6 +12,6 @@ VERSION: "v0"
 FRAME_SKIP: 4
 PRELOAD_WEIGHT: weights/Baseline-v0-2460eps.pth
 CHKPOINT_NUM: 2461 # last chkpoint num + 1 (if you don't want to lose progress)
-RENDER_MODE: 'human' # null for terminal training
+RENDER_MODE: null # null for terminal training
 RESOLUTION : 'RES_160x120'
-SAVING_INTERVAL: 1
+SAVING_INTERVAL: 500
