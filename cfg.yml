@@ -7,16 +7,18 @@ EPS_DECAY: 10000
 TAU: 0.005
 NUM_EPISODE: null
 MEMORY_CAP: 10000
-ARCH: "Baseline"
+ARCH: "ResNet"
 VERSION: "v0"
 FRAME_SKIP: 4
-PRELOAD_WEIGHT: null
-CHKPOINT_NUM: 1 # last chkpoint num + 1 (if you don't want to lose progress)
+PRELOAD_WEIGHT: 'weights/ResNet-DDQN-v0-100001eps.pth'
+CHKPOINT_NUM: 100001 # last chkpoint num + 1 (if you don't want to lose progress)
 RENDER_MODE: null # null for terminal training
 RESOLUTION : 'RES_160x120'
 SAVING_INTERVAL: 5000
 VALIDATION_INTERVAL : 5000
 VALIDATION_EPISODES : 1000
 MAX_STEPS: 600000
-SCENARIO_NAME : "VizdoomMyWayHome-v1"
-VARIANT : "maze"
+SCENARIO_NAME : "VizdoomBasic-v1"
+VARIANT : "basic"
+
+METHOD: "DDQN" # DQN | DDQN

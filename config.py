@@ -36,3 +36,5 @@ VALIDATION_EPISODES = data['VALIDATION_EPISODES']
 # inferencing
 RENDER_MODE = None if 'RENDER_MODE' not in data else data['RENDER_MODE']
 RESOLUTION = data['RESOLUTION']
+
+METHOD = 'DQN' if 'METHOD' not in data else data['METHOD']

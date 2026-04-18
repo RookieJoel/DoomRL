@@ -43,8 +43,8 @@ def save_state_dict(model,optimizer,steps = None,persisted = False) :
 
     if(not os.path.isdir("weights")) :
         os.mkdir("weights")
-
-    logger.info("Save state dict to {}".format(f"weights/{ARCH}-{VERSION}{"-{}eps".format(steps + CHKPOINT_NUM) if steps is not None else ""}.pth"))
+    save_path = f"weights/{ARCH}-{VERSION}-{VARIANT}{"-{}steps".format(steps + CHKPOINT_NUM) if steps is not None else ""}.pth"
+    logger.info("Save state dict to {}".format(save_path))
 
     localModel = deepcopy(model).to("cpu")
     localOptimizer = deepcopy(optimizer)
@@ -55,9 +55,9 @@ def save_state_dict(model,optimizer,steps = None,persisted = False) :
             if os.path.exists(old_path) :
                 os.remove(old_path)
         
-        weights_tracker.append(f"weights/{ARCH}-{VERSION}{"-{}eps".format(steps + CHKPOINT_NUM) if steps is not None else ""}.pth")
+        weights_tracker.append(save_path)
 
     torch.save({
         'model' : localModel.state_dict(),
         'optimizer' : localOptimizer.state_dict()
-    },f"weights/{ARCH}-{VERSION}-{VARIANT}{"-{}steps".format(steps + CHKPOINT_NUM) if steps is not None else ""}.pth")
+    },save_path)

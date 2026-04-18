@@ -1,17 +1,12 @@
 from datetime import datetime
 import logging
-logging.basicConfig(
-    filename='logs/infer-run-{}.log'.format(datetime.now().isoformat()),
-    level=logging.INFO,
-    format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
-    filemode="a"
-)
-
+import os
 import torch
 from config import *
 from env import device , env as GameEnv
 from itertools import count
 from utils import select_action
+from model import policy_net
 from tqdm import tqdm
 import os
 from preprocessor import base_preprocessor
@@ -20,32 +15,48 @@ from icecream import ic
 if(not os.path.isdir("logs")) :
     os.mkdir("logs")
 
+logging.basicConfig(
+    filename='logs/infer-run-{}.log'.format(datetime.now().strftime("%Y%m%d-%H%M%S")),
+    level=logging.INFO,
+    format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
+    filemode="a"
+)
+
+
+
 def infer(n_episodes) :
 
+    policy_net.eval()
     rewards_list = []
+    action_hist = [0 for _ in range(GameEnv.action_space.n)]
 
-    for i in tqdm(range(n_episodes)) :
+    with torch.inference_mode():
+        for i in tqdm(range(n_episodes)) :
 
-        cum_reward = 0
-        game_state , info = GameEnv.reset()
-        state = base_preprocessor(torch.tensor(game_state['screen'].copy() , dtype = torch.float32).unsqueeze(0).permute(0,3,1,2),device=device)
-        for t in count() :
-            action = select_action(state.to(device),t,inference=True)
-            observation , reward , terminated , truncated , _ = GameEnv.step(action.logits.item())
-            reward = torch.tensor([reward],device=device)
-            done = terminated or truncated
+            cum_reward = 0
+            game_state , info = GameEnv.reset()
+            state = base_preprocessor(torch.tensor(game_state['screen'].copy() , dtype = torch.float32).unsqueeze(0).permute(0,3,1,2),device=device)
+            for t in count() :
+                action = select_action(state.to(device),t,inference=True)
+                action_id = action.logits.item()
+                action_hist[action_id] += 1
+                observation , reward , terminated , truncated , _ = GameEnv.step(action_id)
+                reward = torch.tensor([reward],device=device)
+                done = terminated or truncated
 
-            raw = torch.tensor(observation['screen'].copy() , dtype = torch.float32)  # CPU first, avoid MPS lazy eval
-            next_state = base_preprocessor(raw.unsqueeze(0).permute(0,3,1,2), device=device)
+                raw = torch.tensor(observation['screen'].copy() , dtype = torch.float32)  # CPU first, avoid MPS lazy eval
+                next_state = base_preprocessor(raw.unsqueeze(0).permute(0,3,1,2), device=device)
 
-            state = next_state
+                state = next_state
 
-            cum_reward += reward.item()
+                cum_reward += reward.item()
 
-            if done :
-                logging.info("reward: {}".format(cum_reward))
-                rewards_list.append(cum_reward)
-                break
+                if done :
+                    logging.info("reward: {}".format(cum_reward))
+                    rewards_list.append(cum_reward)
+                    break
+
+    logging.info("action histogram: {}".format(action_hist))
 
     return rewards_list
 

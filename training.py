@@ -1,13 +1,5 @@
 import logging
 from datetime import datetime
-
-logging.basicConfig(
-    filename='logs/run-{}.log'.format(datetime.now().isoformat()),
-    level=logging.INFO,
-    format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
-    filemode="a"
-)
-
 import torch
 import torch.nn as nn
 from model import memory
@@ -24,10 +16,18 @@ from inference import infer
 import wandb
 import os
 
-isDatapointEnough = False
 
 if(not os.path.isdir("logs")) :
     os.mkdir("logs")
+
+logging.basicConfig(
+    filename='logs/run-{}.log'.format(datetime.now().isoformat()),
+    level=logging.INFO,
+    format='%(asctime)s - [%(name)s] - %(levelname)s - %(message)s',
+    filemode="a"
+)
+
+isDatapointEnough = False
 
 def optimize_model(preprocessor) :
     if len(memory) < BATCH_SIZE :
@@ -51,7 +51,12 @@ def optimize_model(preprocessor) :
     next_state_values = torch.zeros(BATCH_SIZE , device=device)
     
     with torch.no_grad() :
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+        if non_final_next_states.size(0) > 0:
+            if METHOD == "DDQN":
+                next_actions = policy_net(non_final_next_states).argmax(1, keepdim=True)
+                next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, next_actions).squeeze(1)
+            else:
+                next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
 
     expected_state_action_values = ( next_state_values * GAMMA ) + reward_batch
 
