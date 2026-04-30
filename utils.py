@@ -99,40 +99,36 @@ def select_action(state, steps, ctx: Optional[StarformerContext] = None, inferen
         if is_starformer:
             ctx.push(state, int(logits.item()))
 
-def select_action(state, steps, inference=False):
-    # Import locally to avoid circular dependency
+def select_action(state, steps, ctx: Optional[StarformerContext] = None, inference: bool = False):
+    """Action selection for DQN/DDQN/STARFORMER (non-PPO) paths.
+    PPO and STARFORMER+PPO use dedicated helpers in training.py."""
     from model import policy_net
-    if METHOD == "PPO":
-        from model import actor
-
-    if METHOD == "PPO":
-        if inference:
-            with torch.no_grad():
-                logits, _ = policy_net(state)
-                action_idx = logits.argmax(1).view(1, 1)
-                return ActionRes(steps, action_idx)
-        else:
-            # For PPO training, we use the actor module which returns action and log_prob
-            with torch.no_grad():
-                td = TensorDict({"observation": state}, batch_size=[state.shape[0]], device=device)
-                td = actor(td)
-                # td["action"] is one-hot because of OneHotCategorical
-                action_idx = td["action"].argmax(-1).view(1, 1)
-                # We return the whole TensorDict for PPO as it contains log_prob etc.
-                return ActionRes(steps, action_idx, td)
+    is_starformer = (METHOD == 'STARFORMER') and (ctx is not None)
 
     if inference:
-        with torch.no_grad():
-            q_value = policy_net(state)
-            logits = q_value.max(1).indices.view(1, 1)
-    else:
-        sample = random.random()
-        eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-steps / EPS_DECAY)
-        if sample > eps_threshold:
+        if is_starformer:
+            logits = _starformer_predict(state, ctx)
+            ctx.push(state, int(logits.item()))
+        else:
             with torch.no_grad():
                 logits = policy_net(state).max(1).indices.view(1, 1)
+        return ActionRes(steps, logits)
+
+    sample = random.random()
+    eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(-steps / EPS_DECAY)
+    use_eps = not (is_starformer and not STARFORMER_USE_EPSILON)
+
+    if (not use_eps) or sample > eps_threshold:
+        if is_starformer:
+            logits = _starformer_predict(state, ctx)
         else:
-            logits = torch.tensor([[GameEnv.action_space.sample()]], device=device, dtype=torch.long)
+            with torch.no_grad():
+                logits = policy_net(state).max(1).indices.view(1, 1)
+    else:
+        logits = torch.tensor([[GameEnv.action_space.sample()]], device=device, dtype=torch.long)
+
+    if is_starformer:
+        ctx.push(state, int(logits.item()))
 
     return ActionRes(steps, logits)
 

@@ -1,5 +1,5 @@
 from network import create_q_network
-from env import n_actions , device
+from env import n_actions, device
 from torch import optim as O
 from torch.optim.lr_scheduler import LambdaLR
 import math
@@ -11,29 +11,27 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
-policy_net = create_q_network(
-    arch=ARCH,
-    n_actions=n_actions
-)
+policy_net = create_q_network(arch=ARCH, n_actions=n_actions)
 
-if PRELOAD_WEIGHT is not None :
-    policy_net.load_state_dict(torch.load(PRELOAD_WEIGHT,map_location=torch.device("cpu"))['model'])
+if PRELOAD_WEIGHT is not None:
+    policy_net.load_state_dict(torch.load(PRELOAD_WEIGHT, map_location=torch.device("cpu"))['model'])
     print("model weight loaded from {}".format(PRELOAD_WEIGHT))
     logger.info("model weight loaded from {}".format(PRELOAD_WEIGHT))
-else :
-    logger.info("model weight loaded from {}".format(PRELOAD_WEIGHT))
-    print("No initital weight provided, fall back to random weight")
+else:
+    logger.info("model weight not provided, using random weight")
+    print("No initial weight provided, fall back to random weight")
 
 policy_net = policy_net.to(device)
 
-# Defaults — overridden per METHOD below
+# Defaults — overridden per branch below
 target_net = None
 memory = None
 scheduler = None
 loss_module = None
 advantage_module = None
 
-if METHOD == "PPO":
+if USE_PPO and METHOD != 'STARFORMER':
+    # Standard PPO: ResNet or Baseline ActorCritic + TorchRL
     from tensordict.nn import TensorDictModule
     from torchrl.modules import ProbabilisticActor, ValueOperator, OneHotCategorical
     from torchrl.objectives import ClipPPOLoss
@@ -67,12 +65,10 @@ if METHOD == "PPO":
         distribution_class=OneHotCategorical,
         return_log_prob=True,
     )
-
     value_module = ValueOperator(
         module=_ValueWrapper(policy_net),
         in_keys=["observation"],
     )
-
     loss_module = ClipPPOLoss(
         actor=actor,
         critic=value_module,
@@ -82,14 +78,20 @@ if METHOD == "PPO":
         critic_coeff=CRITIC_COEF,
         loss_critic_type="smooth_l1",
     )
-
     advantage_module = GAE(
         gamma=GAMMA, lmbda=GAE_LAMBDA, value_network=value_module, average_gae=True
     )
-
     optimizer = O.AdamW(policy_net.parameters(), lr=LR)
 
-elif METHOD == "STARFORMER":
+    if PPO_COMPILE:
+        try:
+            policy_net = torch.compile(policy_net)
+            logger.info("PPO: torch.compile(policy_net) enabled")
+        except Exception as _e:
+            logger.warning("PPO: torch.compile failed (%s); running uncompiled", _e)
+
+elif METHOD == 'STARFORMER':
+    # STARFORMER backbone with AdamW + cosine LR (shared by both USE_PPO=true/false)
     optimizer = O.AdamW(
         policy_net.parameters(),
         lr=STARFORMER_LR,
@@ -109,9 +111,14 @@ elif METHOD == "STARFORMER":
 
     scheduler = LambdaLR(optimizer, lr_lambda=_starformer_lr_lambda)
 
-    target_net = create_q_network(arch=ARCH, n_actions=n_actions).to(device)
-    target_net.load_state_dict(policy_net.state_dict())
-    memory = create_replay_memory(SAMPLING_METHOD, MEMORY_CAP, device)
+    if USE_PPO:
+        # On-policy: no target net, no replay memory
+        target_net = None
+        memory = None
+    else:
+        target_net = create_q_network(arch=ARCH, n_actions=n_actions).to(device)
+        target_net.load_state_dict(policy_net.state_dict())
+        memory = create_replay_memory(SAMPLING_METHOD, MEMORY_CAP, device)
 
 else:
     # DQN / DDQN

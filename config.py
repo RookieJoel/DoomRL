@@ -1,6 +1,7 @@
 import yaml
+import warnings as _warnings
 
-with open('cfg.yml','r') as fp :
+with open('cfg.yml','r') as fp:
     data = yaml.safe_load(fp)
 
 # Training setting
@@ -37,18 +38,32 @@ VALIDATION_EPISODES = data['VALIDATION_EPISODES']
 RENDER_MODE = None if 'RENDER_MODE' not in data else data['RENDER_MODE']
 RESOLUTION = data['RESOLUTION']
 
-METHOD = 'DQN' if 'METHOD' not in data else data['METHOD']
+# ── PPO toggle ────────────────────────────────────────────────────────────────
+# USE_PPO: orthogonal axis from ARCH/METHOD.
+# Back-compat: METHOD=PPO in cfg → treated as METHOD=DQN + USE_PPO=True.
+USE_PPO = bool(data.get('USE_PPO', False))
+METHOD = data.get('METHOD', 'DQN')
 
-# PPO parameters
-PPO_EPOCHS = data.get('PPO_EPOCHS', 10)
+if METHOD == 'PPO':
+    _warnings.warn(
+        "METHOD=PPO is deprecated. Use METHOD=DQN (or STARFORMER) + USE_PPO=true instead. "
+        "Auto-converting for this run."
+    )
+    METHOD = 'DQN'
+    USE_PPO = True
+
+# ── PPO hyperparameters ───────────────────────────────────────────────────────
+PPO_EPOCHS = data.get('PPO_EPOCHS', 4)
 PPO_CLIP = data.get('PPO_CLIP', 0.2)
 ENTROPY_COEF = data.get('ENTROPY_COEF', 0.01)
 CRITIC_COEF = data.get('CRITIC_COEF', 0.5)
 GAE_LAMBDA = data.get('GAE_LAMBDA', 0.95)
-PPO_BATCH_SIZE = data.get('PPO_BATCH_SIZE', 128)
+PPO_BATCH_SIZE = data.get('PPO_BATCH_SIZE', 64)
 PPO_BUFFER_SIZE = data.get('PPO_BUFFER_SIZE', 1024)
+PPO_USE_AMP = data.get('PPO_USE_AMP', True)
+PPO_COMPILE = data.get('PPO_COMPILE', False)
 
-# Replay buffer sampling
+# ── Replay buffer sampling ────────────────────────────────────────────────────
 SAMPLING_METHOD = data.get('SAMPLING_METHOD', 'Uniform')
 ALPHA = data.get('ALPHA', 0.6)
 BETA_START = data.get('BETA_START', 0.4)
@@ -62,7 +77,7 @@ if SAMPLING_METHOD in ("PER", "WindowPER") and MAX_STEPS is None:
         "or set MAX_STEPS for step-mode training."
     )
 
-# STARFORMER hyperparameters
+# ── STARFORMER hyperparameters ────────────────────────────────────────────────
 STARFORMER_K = data.get('STARFORMER_K', 30)
 STARFORMER_LAYERS = data.get('STARFORMER_LAYERS', 6)
 STARFORMER_HEADS = data.get('STARFORMER_HEADS', 8)
@@ -76,20 +91,17 @@ STARFORMER_USE_EPSILON = data.get('STARFORMER_USE_EPSILON', True)
 _min_valid_anchors_raw = data.get('MIN_VALID_ANCHORS', None)
 MIN_VALID_ANCHORS = (4 * BATCH_SIZE) if _min_valid_anchors_raw is None else int(_min_valid_anchors_raw)
 
-# METHOD validation
-if METHOD not in ('DQN', 'DDQN', 'STARFORMER', 'PPO'):
-    raise ValueError(f"Unsupported METHOD={METHOD}; expected DQN | DDQN | STARFORMER | PPO")
+# ── Validation ────────────────────────────────────────────────────────────────
+if METHOD not in ('DQN', 'DDQN', 'STARFORMER'):
+    raise ValueError(f"Unsupported METHOD={METHOD!r}; expected DQN | DDQN | STARFORMER")
 
-if METHOD == 'PPO':
+if USE_PPO:
     if MAX_STEPS is None and NUM_EPISODE is None:
-        raise ValueError(
-            "METHOD=PPO requires either MAX_STEPS or NUM_EPISODE in cfg.yml."
-        )
+        raise ValueError("USE_PPO=true requires either MAX_STEPS or NUM_EPISODE in cfg.yml.")
     if SAMPLING_METHOD != 'Uniform':
-        import warnings as _warnings
         _warnings.warn(
-            f"METHOD=PPO with SAMPLING_METHOD={SAMPLING_METHOD!r} is contradictory "
-            "(PPO is on-policy; replay buffer is unused). Forcing SAMPLING_METHOD='Uniform'."
+            f"USE_PPO=true with SAMPLING_METHOD={SAMPLING_METHOD!r} is contradictory "
+            "(on-policy; replay buffer unused). Forcing SAMPLING_METHOD='Uniform'."
         )
         SAMPLING_METHOD = 'Uniform'
 
@@ -100,17 +112,16 @@ if METHOD == 'STARFORMER':
         )
     if ARCH != 'STARFORMER':
         raise ValueError(
-            "METHOD=STARFORMER requires ARCH=STARFORMER (config.py reads ARCH for create_q_network)."
+            "METHOD=STARFORMER requires ARCH=STARFORMER in cfg.yml."
         )
-    if SAMPLING_METHOD == 'Uniform':
-        import warnings as _warnings
-        _warnings.warn(
-            "METHOD=STARFORMER with SAMPLING_METHOD=Uniform overridden to 'WindowPER'."
-        )
-        SAMPLING_METHOD = 'WindowPER'
-    elif SAMPLING_METHOD == 'PER':
-        import warnings as _warnings
-        _warnings.warn(
-            "METHOD=STARFORMER auto-upgrading SAMPLING_METHOD from 'PER' to 'WindowPER'."
-        )
-        SAMPLING_METHOD = 'WindowPER'
+    if not USE_PPO:
+        if SAMPLING_METHOD == 'Uniform':
+            _warnings.warn(
+                "METHOD=STARFORMER with SAMPLING_METHOD=Uniform overridden to 'WindowPER'."
+            )
+            SAMPLING_METHOD = 'WindowPER'
+        elif SAMPLING_METHOD == 'PER':
+            _warnings.warn(
+                "METHOD=STARFORMER auto-upgrading SAMPLING_METHOD from 'PER' to 'WindowPER'."
+            )
+            SAMPLING_METHOD = 'WindowPER'
